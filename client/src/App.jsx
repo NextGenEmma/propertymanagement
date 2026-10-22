@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
 import {
-  ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Building2, CalendarDays, Check,
-  ChevronDown, CircleHelp, ClipboardList, Copy, CreditCard, DoorOpen, Home,
-  KeyRound, LayoutDashboard, LoaderCircle, LogOut, Menu, Plus, Search, ShieldCheck,
-  Sparkles, Users, Wrench, X
+  ArrowDownRight, ArrowRight, ArrowUpRight, Bath, Bell, BedDouble, Building2,
+  CalendarDays, Check, ChevronDown, ChevronLeft, CircleHelp, ClipboardList, Compass,
+  Copy, CreditCard, DoorOpen, Heart, Home, Image as ImageIcon, KeyRound,
+  LayoutDashboard, LoaderCircle, LogOut, Mail, MapPin, Maximize2, Menu, Plus, Search,
+  Send, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, X
 } from 'lucide-react';
 import { apiRequest, clearSession, saveSession } from './api.js';
 
 const navigation = [
+  { id: 'discover', label: 'Discover homes', icon: Compass },
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'properties', label: 'Properties', icon: Building2 },
+  { id: 'inquiries', label: 'Buyer inquiries', icon: Mail },
   { id: 'tenants', label: 'Tenants & leases', icon: Users },
   { id: 'rent', label: 'Rent ledger', icon: CreditCard },
   { id: 'maintenance', label: 'Maintenance', icon: Wrench }
 ];
 
-const emptyData = { tenants: [], payments: [], maintenance: [] };
+const emptyData = { tenants: [], payments: [], maintenance: [], inquiries: [] };
 
 function readStoredUser() {
   try {
@@ -44,7 +47,7 @@ function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'NR';
 }
 
-function AuthScreen({ onAuthenticated }) {
+function AuthScreen({ onAuthenticated, onBrowse }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ fullName: '', email: '', password: '' });
   const [busy, setBusy] = useState(false);
@@ -70,7 +73,7 @@ function AuthScreen({ onAuthenticated }) {
   return (
     <main className="auth-page">
       <section className="auth-story">
-        <div className="brand brand-light"><span className="brand-mark"><Home size={17} /></span><span>FIELDNOTE <small>PROPERTY DESK</small></span></div>
+        <div className="brand brand-light"><span className="brand-mark"><Home size={17} /></span><span>FIELDNOTE<small>PROPERTY DESK</small></span></div>
         <div className="story-copy">
           <p className="eyebrow eyebrow-light">YOUR INDIA PORTFOLIO, IN VIEW</p>
           <h1>Home is closer<br />than the miles.</h1>
@@ -99,6 +102,7 @@ function AuthScreen({ onAuthenticated }) {
           <p className="auth-switch">
             {mode === 'login' ? <>New to Fieldnote? <button onClick={() => { setMode('register'); setError(''); }}>Create an account</button><span className="auth-divider">·</span><button onClick={() => { setMode('managerInvite'); setError(''); }}>Accept manager invite</button></> : mode === 'register' ? <>Already have an account? <button onClick={() => { setMode('login'); setError(''); }}>Sign in</button><span className="auth-divider">·</span><button onClick={() => { setMode('managerInvite'); setError(''); }}>Accept manager invite</button></> : <>Already accepted? <button onClick={() => { setMode('login'); setError(''); }}>Sign in</button></>}
           </p>
+          <button className="auth-browse" onClick={onBrowse}><Search size={14} />Browse available homes</button>
           <p className="auth-footnote"><ShieldCheck size={14} /> Your account is protected with encrypted sign-in.</p>
         </div>
         <div className="auth-legal">© 2026 FIELDNOTE <span>Privacy</span><span>Support</span></div>
@@ -151,6 +155,7 @@ function EmptyState({ icon: Icon, title, detail, action, onAction }) {
 function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem('propertyDeskToken') || '');
   const [user, setUser] = useState(readStoredUser);
+  const [showDiscovery, setShowDiscovery] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
   const [properties, setProperties] = useState([]);
   const [selectedId, setSelectedId] = useState('');
@@ -196,9 +201,10 @@ function App() {
     Promise.all([
       apiRequest(`/api/properties/${selectedId}/tenants`, { token }),
       apiRequest(`/api/properties/${selectedId}/rent-payments`, { token }),
-      apiRequest(`/api/properties/${selectedId}/maintenance`, { token })
-    ]).then(([tenants, payments, maintenance]) => {
-      if (active) setRecords({ tenants, payments, maintenance });
+      apiRequest(`/api/properties/${selectedId}/maintenance`, { token }),
+      apiRequest(`/api/properties/${selectedId}/inquiries`, { token })
+    ]).then(([tenants, payments, maintenance, inquiries]) => {
+      if (active) setRecords({ tenants, payments, maintenance, inquiries });
     }).catch((requestError) => {
       if (active) setError(requestError.message);
     }).finally(() => { if (active) setLoading(false); });
@@ -209,6 +215,7 @@ function App() {
     saveSession(session.token, session.user);
     setToken(session.token);
     setUser(session.user);
+    setShowDiscovery(false);
     setError('');
   }
 
@@ -221,13 +228,18 @@ function App() {
     setRecords(emptyData);
   }
 
-  function showDialog(type) {
+  function showDialog(type, property = null) {
     setInviteResult(null);
     setError('');
     setForm({
       propertyType: 'apartment', currency: 'INR', priority: 'medium',
       leaseStart: '', leaseEnd: '', dueDate: '', period: new Date().toISOString().slice(0, 7),
-      status: 'vacant'
+      status: 'vacant', listingPurpose: property?.listingPurpose || 'rent',
+      askingPrice: property?.askingPrice || '', monthlyRent: property?.monthlyRent || '',
+      bedrooms: property?.bedrooms || '', bathrooms: property?.bathrooms || '',
+      areaSqFt: property?.areaSqFt || '', listingDescription: property?.listingDescription || '',
+      imageUrls: (property?.imageUrls || []).join(', '), amenities: (property?.amenities || []).join(', '),
+      isPublished: property?.isPublished || false
     });
     setDialog(type);
   }
@@ -277,6 +289,20 @@ function App() {
         setNotice('Manager invitation created.');
         setBusy(false);
         return;
+      } else if (dialog === 'listing') {
+        await apiRequest(`/api/properties/${selectedId}`, { token, method: 'PATCH', body: JSON.stringify({
+          listingPurpose: form.listingPurpose,
+          askingPrice: Number(form.askingPrice || 0),
+          monthlyRent: Number(form.monthlyRent || 0),
+          bedrooms: Number(form.bedrooms || 0),
+          bathrooms: Number(form.bathrooms || 0),
+          areaSqFt: Number(form.areaSqFt || 0),
+          listingDescription: form.listingDescription || '',
+          imageUrls: (form.imageUrls || '').split(',').map((url) => url.trim()).filter(Boolean),
+          amenities: (form.amenities || '').split(',').map((item) => item.trim()).filter(Boolean),
+          isPublished: Boolean(form.isPublished)
+        }) });
+        setNotice(form.isPublished ? 'Your listing is live in Discover.' : 'Your public listing is unpublished.');
       }
 
       setRefreshKey((value) => value + 1);
@@ -312,13 +338,26 @@ function App() {
     }
   }
 
+  async function updateInquiry(inquiry, status) {
+    try {
+      await apiRequest(`/api/properties/${selectedId}/inquiries/${inquiry._id}`, {
+        token, method: 'PATCH', body: JSON.stringify({ status })
+      });
+      setNotice('Inquiry status updated.');
+      setRefreshKey((value) => value + 1);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
   async function copyInvite() {
     if (!inviteResult?.inviteToken) return;
     await navigator.clipboard.writeText(inviteResult.inviteToken);
     setNotice('Invitation token copied. Share it with the manager securely.');
   }
 
-  if (!token) return <AuthScreen onAuthenticated={authenticate} />;
+  if (!token && showDiscovery) return <DiscoveryView isPublic onBack={() => setShowDiscovery(false)} />;
+  if (!token) return <AuthScreen onAuthenticated={authenticate} onBrowse={() => setShowDiscovery(true)} />;
 
   const openMaintenance = records.maintenance.filter((item) => !['resolved', 'cancelled'].includes(item.status));
   const occupiedCount = properties.filter((property) => property.status === 'occupied').length;
@@ -338,6 +377,7 @@ function App() {
             <button key={id} className={`nav-item ${activeSection === id ? 'active' : ''}`} onClick={() => setActiveSection(id)}>
               <Icon size={17} strokeWidth={1.8} /><span>{label}</span>
               {id === 'maintenance' && openMaintenance.length > 0 && <span className="nav-count">{openMaintenance.length}</span>}
+              {id === 'inquiries' && records.inquiries.filter((inquiry) => inquiry.status === 'new').length > 0 && <span className="nav-count">{records.inquiries.filter((inquiry) => inquiry.status === 'new').length}</span>}
             </button>
           ))}
         </nav>
@@ -365,7 +405,9 @@ function App() {
           {loading && <div className="loading-line"><LoaderCircle size={15} className="spin" /> Syncing your portfolio</div>}
 
           {activeSection === 'overview' && <Overview properties={properties} selectedProperty={selectedProperty} tenants={records.tenants} payments={records.payments} maintenance={records.maintenance} occupiedCount={occupiedCount} expectedRent={expectedRent} pendingRent={pendingRent} onNavigate={setActiveSection} onAddProperty={() => showDialog('property')} onAddMaintenance={() => showDialog('maintenance')} />}
-          {activeSection === 'properties' && <PropertiesView properties={filteredProperties} selectedProperty={selectedProperty} search={search} setSearch={setSearch} onSelect={setSelectedId} onAdd={() => showDialog('property')} onInvite={() => showDialog('manager')} ownerCanEdit={ownerCanEdit} />}
+          {activeSection === 'discover' && <DiscoveryView token={token} />}
+          {activeSection === 'properties' && <PropertiesView properties={filteredProperties} selectedProperty={selectedProperty} search={search} setSearch={setSearch} onSelect={setSelectedId} onAdd={() => showDialog('property')} onInvite={() => showDialog('manager')} onManageListing={() => showDialog('listing', selectedProperty)} ownerCanEdit={ownerCanEdit} />}
+          {activeSection === 'inquiries' && <InquiriesView property={selectedProperty} inquiries={records.inquiries} onUpdate={(inquiry, status) => updateInquiry(inquiry, status)} />}
           {activeSection === 'tenants' && <TenantsView property={selectedProperty} tenants={records.tenants} onAdd={() => showDialog('tenant')} />}
           {activeSection === 'rent' && <RentView property={selectedProperty} tenants={records.tenants} payments={records.payments} onAdd={() => showDialog('rent')} onMarkPaid={markPaid} />}
           {activeSection === 'maintenance' && <MaintenanceView property={selectedProperty} items={records.maintenance} onAdd={() => showDialog('maintenance')} onUpdate={updateMaintenance} />}
@@ -375,6 +417,170 @@ function App() {
 
       {dialog && <Dialog type={dialog} form={form} setForm={setForm} busy={busy} error={error} result={inviteResult} tenants={records.tenants} onSubmit={submitDialog} onClose={closeDialog} onCopy={copyInvite} />}
       <MobileNav active={activeSection} onChange={setActiveSection} />
+    </div>
+  );
+}
+
+const listingPhotos = [
+  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=82',
+  'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=82',
+  'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=82'
+];
+
+function DiscoveryView({ isPublic = false, onBack, token }) {
+  const [filters, setFilters] = useState({ city: '', purpose: '', type: '', q: '', minPrice: '', maxPrice: '', bedrooms: '', sort: 'recent' });
+  const [applied, setApplied] = useState({});
+  const [facets, setFacets] = useState({ cities: [], types: [], total: 0 });
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState('all');
+  const [saved, setSaved] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('fieldnote-shortlist') || '[]'); }
+    catch { return []; }
+  });
+  const [selectedListing, setSelectedListing] = useState(null);
+  const [inquiry, setInquiry] = useState({ fullName: '', email: '', phone: '', message: '' });
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    apiRequest('/api/listings/facets')
+      .then(setFacets)
+      .catch((requestError) => setError(requestError.message));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams(Object.entries(applied).filter(([, value]) => value));
+    setLoading(true);
+    apiRequest(`/api/listings${params.size ? `?${params}` : ''}`)
+      .then((result) => {
+        if (active) {
+          setListings(result.items || []);
+          setError('');
+        }
+      })
+      .catch((requestError) => { if (active) setError(requestError.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [applied]);
+
+  function applyFilters(next = filters) {
+    setFilters(next);
+    setApplied({ ...next, page: 1, limit: 12 });
+    setTab('all');
+  }
+
+  function setFilter(key, value) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleSaved(id) {
+    const next = saved.includes(id) ? saved.filter((item) => item !== id) : [...saved, id];
+    setSaved(next);
+    localStorage.setItem('fieldnote-shortlist', JSON.stringify(next));
+  }
+
+  function showDetails(listing) {
+    setSelectedListing(listing);
+    setSent(false);
+    setInquiry({ fullName: '', email: '', phone: '', message: `I'm interested in ${listing.name}. Please share more details.` });
+  }
+
+  async function sendInquiry(event) {
+    event.preventDefault();
+    setSending(true);
+    setError('');
+    try {
+      await apiRequest(`/api/listings/${selectedListing._id}/inquiries`, { method: 'POST', body: JSON.stringify(inquiry) });
+      setSent(true);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const visibleListings = tab === 'saved' ? listings.filter((listing) => saved.includes(listing._id)) : listings;
+  const currency = visibleListings[0]?.currency || 'INR';
+
+  return (
+    <main className={isPublic ? 'discovery-page discovery-public' : 'discovery-page discovery-embedded'}>
+      {isPublic ? <header className="discovery-public-header"><button className="brand" onClick={onBack}><span className="brand-mark"><Home size={17} /></span><span>FIELDNOTE<small>PROPERTY DESK</small></span></button><span className="discovery-public-tag">INDIA HOMES <i>·</i> OWNER DIRECT</span><button className="button button-primary" onClick={onBack}><KeyRound size={15} />Owner sign in</button></header> : null}
+      <div className="discovery-content">
+        {!isPublic && <PageHeading eyebrow="FIND A PLACE IN INDIA" title="Discover homes" subtitle="Explore owner-listed homes by city, type and budget." />}
+        {isPublic && <div className="discovery-title"><p className="eyebrow">FIELDNOTE HOME FINDER <span>·</span> INDIA</p><h1>A place that feels<br />a little like home.</h1><p>Browse owner-listed homes for sale or rent. Shortlist a place, then speak directly with its owner.</p></div>}
+
+        <form className="discovery-search panel" onSubmit={(event) => { event.preventDefault(); applyFilters(); }}>
+          <label className="discovery-query"><Search size={17} /><input aria-label="Search homes" value={filters.q} onChange={(event) => setFilter('q', event.target.value)} placeholder="Search by home, city or area" /></label>
+          <div className="discovery-filter-row">
+            <label className="discovery-filter"><span>LOCATION</span><select value={filters.city} onChange={(event) => setFilter('city', event.target.value)}><option value="">All cities</option>{facets.cities.map((city) => <option key={city} value={city}>{city}</option>)}</select></label>
+            <label className="discovery-filter"><span>LOOKING FOR</span><select value={filters.purpose} onChange={(event) => setFilter('purpose', event.target.value)}><option value="">Buy or rent</option><option value="sale">Buy</option><option value="rent">Rent</option></select></label>
+            <label className="discovery-filter"><span>PROPERTY TYPE</span><select value={filters.type} onChange={(event) => setFilter('type', event.target.value)}><option value="">Any type</option><option value="apartment">Apartment</option><option value="house">Villa / house</option><option value="land">Plot / land</option><option value="commercial">Commercial</option></select></label>
+            <label className="discovery-filter"><span>BEDROOMS</span><select value={filters.bedrooms} onChange={(event) => setFilter('bedrooms', event.target.value)}><option value="">Any</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option></select></label>
+            <label className="discovery-filter"><span>MIN BUDGET</span><input type="number" min="0" value={filters.minPrice} onChange={(event) => setFilter('minPrice', event.target.value)} placeholder="₹ minimum" /></label>
+            <label className="discovery-filter"><span>MAX BUDGET</span><input type="number" min="0" value={filters.maxPrice} onChange={(event) => setFilter('maxPrice', event.target.value)} placeholder="₹ maximum" /></label>
+            <button className="button button-primary discovery-submit" type="submit"><Search size={15} />Search homes</button>
+          </div>
+        </form>
+
+        {error && <div className="notice notice-error" role="alert"><span>{error}</span><button className="icon-button" onClick={() => setError('')} aria-label="Dismiss"><X size={16} /></button></div>}
+        <section className="discovery-collections" aria-label="Popular property searches">
+          <div className="collection-heading"><div><p className="eyebrow">A GOOD PLACE TO START</p><h2>Browse by collection</h2></div><span>{facets.total || 0} owner-listed homes</span></div>
+          <div className="collection-chips">
+            <button onClick={() => applyFilters({ ...filters, purpose: 'sale', type: '', sort: 'recent' })}><Building2 size={15} />Homes to buy</button>
+            <button onClick={() => applyFilters({ ...filters, purpose: 'rent', type: '', sort: 'recent' })}><KeyRound size={15} />Homes to rent</button>
+            <button onClick={() => applyFilters({ ...filters, purpose: '', type: 'apartment', sort: 'recent' })}><Building2 size={15} />Apartments</button>
+            <button onClick={() => applyFilters({ ...filters, purpose: '', type: 'house', sort: 'recent' })}><Home size={15} />Villas & houses</button>
+            <button onClick={() => applyFilters({ ...filters, purpose: '', type: 'land', sort: 'recent' })}><MapPin size={15} />Plots & land</button>
+          </div>
+        </section>
+
+        <section className="discovery-results">
+          <div className="results-heading"><div><p className="eyebrow">PROPERTY DESK LISTINGS</p><h2>{tab === 'saved' ? 'Your shortlist' : 'Homes to explore'}</h2><span>{tab === 'saved' ? `${saved.length} saved` : `${facets.total} verified owner entries`}</span></div><div className="results-controls"><div className="discovery-tabs"><button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>All homes</button><button className={tab === 'saved' ? 'active' : ''} onClick={() => setTab('saved')}><Heart size={14} />Shortlist{saved.length > 0 && <span>{saved.length}</span>}</button></div><label className="sort-control"><SlidersHorizontal size={14} /><select aria-label="Sort listings" value={filters.sort} onChange={(event) => applyFilters({ ...filters, sort: event.target.value })}><option value="recent">Recently added</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option></select></label></div></div>
+          {loading ? <div className="discovery-loading"><LoaderCircle className="spin" size={18} />Finding available homes</div> : visibleListings.length ? <div className="listing-grid">{visibleListings.map((listing, index) => <ListingCard key={listing._id} listing={listing} index={index} saved={saved.includes(listing._id)} onSave={() => toggleSaved(listing._id)} onOpen={() => showDetails(listing)} />)}</div> : <EmptyState icon={tab === 'saved' ? Heart : Search} title={tab === 'saved' ? 'Your shortlist is empty' : 'No homes match those filters'} detail={tab === 'saved' ? 'Tap the heart on a listing to keep it close.' : 'Try a different city, price range, or property type.'} action={tab === 'saved' ? 'Browse all homes' : 'Clear filters'} onAction={() => { setTab('all'); applyFilters({ city: '', purpose: '', type: '', q: '', minPrice: '', maxPrice: '', bedrooms: '', sort: 'recent' }); }} />}
+        </section>
+        <div className="discovery-disclaimer"><ShieldCheck size={15} /><span>Listing details are shared by property owners. Confirm documents, terms and property information independently before making a decision.</span></div>
+      </div>
+      {selectedListing && <ListingDetail listing={selectedListing} saved={saved.includes(selectedListing._id)} inquiry={inquiry} setInquiry={setInquiry} sending={sending} sent={sent} error={error} onSave={() => toggleSaved(selectedListing._id)} onSubmit={sendInquiry} onClose={() => setSelectedListing(null)} />}
+      {isPublic && <footer className="discovery-footer"><span>FIELDNOTE <i>·</i> INDIA HOMES</span><button onClick={onBack}>Property owner? Sign in <ArrowRight size={14} /></button><span>INR <i>·</i> ASIA/KOLKATA</span></footer>}
+    </main>
+  );
+}
+
+function ListingCard({ listing, index, saved, onSave, onOpen }) {
+  const price = listing.listingPurpose === 'sale' ? listing.askingPrice : listing.monthlyRent;
+  const priceSuffix = listing.listingPurpose === 'sale' ? '' : ' / month';
+  const image = listing.imageUrls?.[0] || listingPhotos[index % listingPhotos.length];
+  return (
+    <article className="listing-card">
+      <button className="listing-image-button" onClick={onOpen} aria-label={`View ${listing.name}`}>
+        <img src={image} alt={`${listing.propertyType} in ${listing.address?.city}`} loading="lazy" />
+        <span className="listing-purpose">{listing.listingPurpose === 'sale' ? 'FOR SALE' : 'FOR RENT'}</span>
+      </button>
+      <button className={`listing-save ${saved ? 'saved' : ''}`} onClick={onSave} aria-label={saved ? 'Remove from shortlist' : 'Add to shortlist'} title={saved ? 'Remove from shortlist' : 'Add to shortlist'}><Heart size={17} fill={saved ? 'currentColor' : 'none'} /></button>
+      <button className="listing-card-body" onClick={onOpen}>
+        <div className="listing-location"><MapPin size={13} />{listing.address?.city}, {listing.address?.state}</div>
+        <h3>{listing.name}</h3>
+        <div className="listing-specs"><span><BedDouble size={14} />{listing.bedrooms || '—'} beds</span><span><Bath size={14} />{listing.bathrooms || '—'} baths</span><span><Maximize2 size={13} />{listing.areaSqFt ? `${listing.areaSqFt} sq ft` : 'Area n/a'}</span></div>
+        <div className="listing-card-foot"><strong>{money(price, listing.currency)}<small>{priceSuffix}</small></strong><span>View details <ArrowRight size={14} /></span></div>
+      </button>
+    </article>
+  );
+}
+
+function ListingDetail({ listing, saved, inquiry, setInquiry, sending, sent, error, onSave, onSubmit, onClose }) {
+  const image = listing.imageUrls?.[0] || listingPhotos[0];
+  const price = listing.listingPurpose === 'sale' ? listing.askingPrice : listing.monthlyRent;
+  return (
+    <div className="modal-backdrop listing-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="listing-detail-modal" role="dialog" aria-modal="true" aria-labelledby="listing-detail-title">
+        <button className="listing-close icon-button" onClick={onClose} aria-label="Close listing"><X size={18} /></button>
+        <div className="listing-detail-layout"><div className="listing-detail-main"><img className="listing-detail-image" src={image} alt={`${listing.propertyType} in ${listing.address?.city}`} /><div className="listing-detail-copy"><div className="listing-location"><MapPin size={14} />{listing.address?.city}, {listing.address?.state}</div><div className="listing-detail-title"><div><h2 id="listing-detail-title">{listing.name}</h2><p>{listing.propertyType} <span>·</span> {listing.listingPurpose === 'sale' ? 'For sale' : 'For rent'}</p></div><button className={`detail-save ${saved ? 'saved' : ''}`} onClick={onSave}><Heart size={16} fill={saved ? 'currentColor' : 'none'} />{saved ? 'Saved' : 'Save home'}</button></div><strong className="listing-detail-price">{money(price, listing.currency)}{listing.listingPurpose !== 'sale' && <small> / month</small>}</strong><div className="listing-detail-specs"><span><BedDouble size={16} />{listing.bedrooms || '—'} bedrooms</span><span><Bath size={16} />{listing.bathrooms || '—'} bathrooms</span><span><Maximize2 size={15} />{listing.areaSqFt ? `${listing.areaSqFt} sq ft` : 'Area not listed'}</span></div><h3>About this home</h3><p className="listing-description">{listing.listingDescription || 'The owner has not added a description yet.'}</p>{listing.amenities?.length > 0 && <div className="amenity-list">{listing.amenities.map((amenity) => <span key={amenity}>{amenity}</span>)}</div>}</div></div>
+          <aside className="inquiry-panel"><p className="eyebrow">ASK THE OWNER</p><h3>Interested in this home?</h3>{sent ? <div className="inquiry-success"><span><Check size={17} /></span><strong>Message sent</strong><p>The owner has your inquiry and can follow up with you directly.</p></div> : <form className="form-stack inquiry-form" onSubmit={onSubmit}><Field label="Your name" value={inquiry.fullName} onChange={(value) => setInquiry((current) => ({ ...current, fullName: value }))} required /><Field label="Email" type="email" value={inquiry.email} onChange={(value) => setInquiry((current) => ({ ...current, email: value }))} required /><Field label="Phone (optional)" type="tel" value={inquiry.phone} onChange={(value) => setInquiry((current) => ({ ...current, phone: value }))} /><label className="field"><span>Message</span><textarea rows="3" value={inquiry.message} onChange={(event) => setInquiry((current) => ({ ...current, message: event.target.value }))} required /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary button-full" disabled={sending}>{sending ? <LoaderCircle size={15} className="spin" /> : <Send size={15} />}Send inquiry</button><small>Your contact details are shared only with this listing’s owner.</small></form>}</aside>
+        </div>
+      </section>
     </div>
   );
 }
@@ -438,7 +644,7 @@ function Overview({ properties, selectedProperty, tenants, payments, maintenance
   );
 }
 
-function PropertiesView({ properties, selectedProperty, search, setSearch, onSelect, onAdd, onInvite, ownerCanEdit }) {
+function PropertiesView({ properties, selectedProperty, search, setSearch, onSelect, onAdd, onInvite, onManageListing, ownerCanEdit }) {
   return (
     <>
       <PageHeading eyebrow="YOUR INDIA HOMES" title="Properties" subtitle="A single view of every place you call yours." action actionLabel="Add property" onAction={onAdd} />
@@ -449,9 +655,9 @@ function PropertiesView({ properties, selectedProperty, search, setSearch, onSel
         </section>
         {selectedProperty && <section className="panel property-detail-panel">
           <div className="detail-banner"><div><span className="detail-type">{String(selectedProperty.propertyType || 'property').toUpperCase()}</span><h2>{selectedProperty.name}</h2><p>{selectedProperty.address?.line1}{selectedProperty.address?.line2 ? `, ${selectedProperty.address.line2}` : ''}</p><p>{selectedProperty.address?.city}, {selectedProperty.address?.state} {selectedProperty.address?.postalCode}</p></div><Status value={selectedProperty.status} /></div>
-          <div className="detail-facts"><div><span>MONTHLY RENT</span><strong>{money(selectedProperty.monthlyRent, selectedProperty.currency)}</strong></div><div><span>LOCAL TIMEZONE</span><strong>{selectedProperty.timezone || 'Asia/Kolkata'}</strong></div><div><span>PROPERTY ID</span><strong>#{shortId(selectedProperty._id)}</strong></div></div>
+          <div className="detail-facts"><div><span>MONTHLY RENT</span><strong>{money(selectedProperty.monthlyRent, selectedProperty.currency)}</strong></div><div><span>LOCAL TIMEZONE</span><strong>{selectedProperty.timezone || 'Asia/Kolkata'}</strong></div><div><span>DISCOVERY LISTING</span><strong>{selectedProperty.isPublished ? 'Published' : 'Private'}</strong></div></div>
           {selectedProperty.notes && <div className="property-notes"><span>OWNER NOTES</span><p>{selectedProperty.notes}</p></div>}
-          <div className="detail-actions"><button className="button button-secondary" onClick={() => onSelect(selectedProperty._id)}>Refresh details</button>{ownerCanEdit && <button className="button button-primary" onClick={onInvite}><Users size={16} />Invite a manager</button>}</div>
+          <div className="detail-actions"><button className="button button-secondary" onClick={() => onSelect(selectedProperty._id)}>Refresh details</button>{ownerCanEdit && <><button className="button button-secondary" onClick={onManageListing}><Compass size={16} />{selectedProperty.isPublished ? 'Edit public listing' : 'Publish listing'}</button><button className="button button-primary" onClick={onInvite}><Users size={16} />Invite a manager</button></>}</div>
         </section>}
       </div>}
     </>
@@ -488,9 +694,16 @@ function MaintenanceView({ property, items, onAdd, onUpdate }) {
   </>;
 }
 
+function InquiriesView({ property, inquiries, onUpdate }) {
+  return <>
+    <PageHeading eyebrow="OWNER FOLLOW-UP" title="Buyer inquiries" subtitle={property ? `Interest from people who viewed ${property.name}.` : 'Choose a property to review listing inquiries.'} />
+    {!property ? <EmptyState icon={Building2} title="Select a property first" detail="Choose a property above to see inquiries on its listing." /> : inquiries.length === 0 ? <EmptyState icon={Mail} title="No inquiries yet" detail="When someone contacts you about a published home, their message will appear here." /> : <div className="inquiry-list">{inquiries.map((inquiry) => <article className="panel inquiry-item" key={inquiry._id}><div className="inquiry-item-head"><div className="table-person"><span className="avatar avatar-small">{initials(inquiry.fullName)}</span><span><strong>{inquiry.fullName}</strong><small>{dateLabel(inquiry.createdAt)}</small></span></div><Status value={inquiry.status} /></div><p>{inquiry.message}</p><div className="inquiry-contact"><a href={`mailto:${inquiry.email}`}>{inquiry.email}</a>{inquiry.phone && <a href={`tel:${inquiry.phone}`}>{inquiry.phone}</a>}</div><div className="inquiry-actions"><span>Listing: {property.name}</span><label>Update status<select value={inquiry.status} onChange={(event) => onUpdate(inquiry, event.target.value)}><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></label></div></article>)}</div>}
+  </>;
+}
+
 function Dialog({ type, form, setForm, busy, error, result, tenants, onSubmit, onClose, onCopy }) {
-  const titles = { property: 'Add a property', tenant: 'Add a tenant', rent: 'Record monthly rent', maintenance: 'Log maintenance', manager: 'Invite a property manager' };
-  const subtitles = { property: 'Add a home to your India portfolio.', tenant: 'Keep lease and contact details together.', rent: 'Add a rent due entry to the property ledger.', maintenance: 'Give your local team a clear next action.', manager: 'Create a secure, expiring invitation for this home.' };
+  const titles = { property: 'Add a property', listing: 'Manage public listing', tenant: 'Add a tenant', rent: 'Record monthly rent', maintenance: 'Log maintenance', manager: 'Invite a property manager' };
+  const subtitles = { property: 'Add a home to your India portfolio.', listing: 'Choose what appears in public property discovery.', tenant: 'Keep lease and contact details together.', rent: 'Add a rent due entry to the property ledger.', maintenance: 'Give your local team a clear next action.', manager: 'Create a secure, expiring invitation for this home.' };
   function change(key, value) { setForm((current) => ({ ...current, [key]: value })); }
   const set = (key) => (value) => change(key, value);
 
@@ -506,6 +719,15 @@ function Dialog({ type, form, setForm, busy, error, result, tenants, onSubmit, o
             <Field label="Address line 2" value={form.line2 || ''} onChange={set('line2')} placeholder="Unit, floor (optional)" />
             <div className="form-grid"><Field label="City" value={form.city || ''} onChange={set('city')} required /><Field label="State" value={form.state || ''} onChange={set('state')} required /></div>
             <div className="form-grid"><Field label="Postal code" value={form.postalCode || ''} onChange={set('postalCode')} required /><Field label="Monthly rent" type="number" min="0" value={form.monthlyRent || ''} onChange={set('monthlyRent')} required /></div>
+          </>}
+          {type === 'listing' && <>
+            <Field label="Listing purpose" value={form.listingPurpose} onChange={set('listingPurpose')} options={[{ value: 'rent', label: 'For rent' }, { value: 'sale', label: 'For sale' }]} />
+            {form.listingPurpose === 'sale' ? <Field label="Asking price (INR)" type="number" min="1" value={form.askingPrice || ''} onChange={set('askingPrice')} required /> : <Field label="Monthly rent (INR)" type="number" min="1" value={form.monthlyRent || ''} onChange={set('monthlyRent')} required />}
+            <div className="form-grid"><Field label="Bedrooms" type="number" min="0" max="30" value={form.bedrooms || ''} onChange={set('bedrooms')} /><Field label="Bathrooms" type="number" min="0" max="30" value={form.bathrooms || ''} onChange={set('bathrooms')} /><Field label="Area (sq ft)" type="number" min="0" value={form.areaSqFt || ''} onChange={set('areaSqFt')} /></div>
+            <label className="field"><span>Public description</span><textarea rows="3" maxLength="4000" value={form.listingDescription || ''} onChange={(event) => change('listingDescription', event.target.value)} placeholder="Describe the home, its location and nearby amenities" required /></label>
+            <Field label="Photo URLs (comma-separated)" value={form.imageUrls || ''} onChange={set('imageUrls')} placeholder="https://..." />
+            <Field label="Amenities (comma-separated)" value={form.amenities || ''} onChange={set('amenities')} placeholder="Parking, lift, balcony" />
+            <label className="publish-toggle"><input type="checkbox" checked={Boolean(form.isPublished)} onChange={(event) => change('isPublished', event.target.checked)} /><span><strong>Publish this listing</strong><small>Show the home to people browsing Discover.</small></span></label>
           </>}
           {type === 'tenant' && <>
             <Field label="Tenant full name" value={form.fullName || ''} onChange={set('fullName')} required />
@@ -526,7 +748,7 @@ function Dialog({ type, form, setForm, busy, error, result, tenants, onSubmit, o
           </>}
           {type === 'manager' && <Field label="Manager email address" type="email" value={form.email || ''} onChange={set('email')} placeholder="manager@example.com" required />}
           {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="modal-actions"><button type="button" className="button button-quiet" onClick={onClose}>Cancel</button><button type="submit" className="button button-primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{type === 'manager' ? 'Create invitation' : type === 'property' ? 'Save property' : type === 'tenant' ? 'Save lease' : type === 'rent' ? 'Add to ledger' : 'Create request'}</button></div>
+          <div className="modal-actions"><button type="button" className="button button-quiet" onClick={onClose}>Cancel</button><button type="submit" className="button button-primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{type === 'manager' ? 'Create invitation' : type === 'property' ? 'Save property' : type === 'listing' ? form.isPublished ? 'Publish listing' : 'Save listing' : type === 'tenant' ? 'Save lease' : type === 'rent' ? 'Add to ledger' : 'Create request'}</button></div>
         </form>}
       </section>
     </div>

@@ -7,6 +7,7 @@ import Tenant from '../models/Tenant.js';
 import RentPayment from '../models/RentPayment.js';
 import MaintenanceRequest from '../models/MaintenanceRequest.js';
 import ManagerInvite from '../models/ManagerInvite.js';
+import ListingInquiry from '../models/ListingInquiry.js';
 import User from '../models/User.js';
 import { createToken } from '../middleware/auth.js';
 
@@ -222,6 +223,91 @@ describe('property backend routes', () => {
     expect(tenant.validateSync()).toBeUndefined();
     expect(rent.validateSync()).toBeUndefined();
     expect(maintenance.validateSync()).toBeUndefined();
+  });
+
+  it('requires sale price and description before publishing a property', async () => {
+    const property = new Property({
+      owner: new mongoose.Types.ObjectId(),
+      name: 'Chennai Apartment',
+      address: { line1: '12 Marina Road', city: 'Chennai', state: 'Tamil Nadu', postalCode: '600001' },
+      listingPurpose: 'sale',
+      isPublished: true
+    });
+    const validationError = await property.validate().catch((error) => error);
+
+    expect(validationError.errors.askingPrice).toBeDefined();
+    expect(validationError.errors.listingDescription).toBeDefined();
+  });
+
+  it('filters public listings and excludes street address fields', async () => {
+    const listing = {
+      _id: 'listing-id',
+      name: 'Chennai Apartment',
+      propertyType: 'apartment',
+      listingPurpose: 'rent',
+      monthlyRent: 30000,
+      address: { city: 'Chennai', state: 'Tamil Nadu', country: 'India', line1: '12 Marina Road', postalCode: '600001' }
+    };
+    const lean = vi.fn().mockResolvedValue([listing]);
+    const limit = vi.fn().mockReturnValue({ lean });
+    const skip = vi.fn().mockReturnValue({ limit });
+    const sort = vi.fn().mockReturnValue({ skip });
+    const select = vi.fn().mockReturnValue({ sort });
+    const find = vi.spyOn(Property, 'find').mockReturnValue({ select });
+    vi.spyOn(Property, 'countDocuments').mockResolvedValue(1);
+    const response = await fetch(`${baseUrl}/api/listings?city=Chennai&purpose=rent&type=apartment&minPrice=10000&maxPrice=45000&bedrooms=2&sort=price-low`);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(find).toHaveBeenCalledWith({ $and: [
+      { isPublished: true },
+      { 'address.city': { $regex: 'Chennai', $options: 'i' } },
+      { listingPurpose: 'rent' },
+      { propertyType: 'apartment' },
+      { bedrooms: { $gte: 2 } },
+      { monthlyRent: { $gte: 10000, $lte: 45000 } }
+    ] });
+    expect(body.items[0].address).toEqual({ city: 'Chennai', state: 'Tamil Nadu', country: 'India' });
+    expect(body.items[0].address.line1).toBeUndefined();
+    expect(body.total).toBe(1);
+  });
+
+  it('does not return unpublished properties as public listings', async () => {
+    const lean = vi.fn().mockResolvedValue(null);
+    vi.spyOn(Property, 'findOne').mockReturnValue({ select: vi.fn().mockReturnValue({ lean }) });
+    const listingId = new mongoose.Types.ObjectId().toString();
+    const response = await fetch(`${baseUrl}/api/listings/${listingId}`);
+
+    expect(response.status).toBe(404);
+    expect(Property.findOne).toHaveBeenCalledWith({ _id: listingId, isPublished: true });
+  });
+
+  it('sends a public inquiry to the published listing owner', async () => {
+    const listingId = new mongoose.Types.ObjectId().toString();
+    const ownerId = new mongoose.Types.ObjectId().toString();
+    const select = vi.fn().mockResolvedValue({ _id: listingId, owner: ownerId });
+    vi.spyOn(Property, 'findOne').mockReturnValue({ select });
+    const create = vi.spyOn(ListingInquiry, 'create').mockResolvedValue({ id: 'inquiry-id' });
+    const response = await fetch(`${baseUrl}/api/listings/${listingId}/inquiries`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Home Seeker',
+        email: 'seeker@example.com',
+        phone: '+91 90000 00000',
+        message: 'I would like to arrange a viewing.'
+      })
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.id).toBe('inquiry-id');
+    expect(Property.findOne).toHaveBeenCalledWith({ _id: listingId, isPublished: true });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      property: listingId,
+      owner: ownerId,
+      email: 'seeker@example.com'
+    }));
   });
 });
 

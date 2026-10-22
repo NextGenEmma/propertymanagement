@@ -18,10 +18,12 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/listings', require('./routes/listingRoutes'));
 app.use('/api/properties', require('./routes/propertyRoutes'));
 app.use('/api/properties', require('./routes/tenantRoutes'));
 app.use('/api/properties', require('./routes/rentRoutes'));
 app.use('/api/properties', require('./routes/maintenanceRoutes'));
+app.use('/api/properties', require('./routes/inquiryRoutes'));
 app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use(errorHandler);
 

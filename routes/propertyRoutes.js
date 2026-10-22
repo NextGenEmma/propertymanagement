@@ -24,7 +24,7 @@ router.post('/', requireOwner, asyncHandler(async (req, res) => {
 router.get('/:propertyId', loadProperty, (req, res) => res.json(req.property));
 
 router.patch('/:propertyId', requireOwner, loadProperty, asyncHandler(async (req, res) => {
-	const allowedFields = ['name', 'propertyType', 'address', 'monthlyRent', 'currency', 'timezone', 'status', 'notes'];
+	const allowedFields = ['name', 'propertyType', 'address', 'monthlyRent', 'currency', 'timezone', 'status', 'notes', 'listingPurpose', 'askingPrice', 'bedrooms', 'bathrooms', 'areaSqFt', 'listingDescription', 'imageUrls', 'amenities', 'isPublished'];
 	const updates = Object.fromEntries(Object.entries(req.body).filter(([key]) => allowedFields.includes(key)));
 	Object.assign(req.property, updates);
 	await req.property.save();
